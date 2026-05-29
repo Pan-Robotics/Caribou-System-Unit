@@ -1,111 +1,80 @@
-
 # Caribou System Unit
 
-## Ground Control Station & Onboard Flight UI
+Onboard telemetry handler for **Project Caribou**. Collects flight data from the flight controller, ESCs, and BMS; logs it locally; and streams it to the Caribou Hub over cellular.
 
-### Functions:
-1. Data Logger
-2. Telemetry Server
-3. User Interface Engine
+> **Status:** Phase 1 — architecture locked, V1 implementation in progress.
+> Tracking issue: [Arrow-air/project-caribou#12](https://github.com/Arrow-air/project-caribou/issues/12)
+> Full architecture: [Docs/Architecture.md](Docs/Architecture.md)
 
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Architecture Overview](#architecture-overview)
-3. [File Descriptions](#file-descriptions)
-    - [FCPC.py](#fcpcpy)
-    - [Data.py](#datapy)
-    - [Veronte.py](#verontepy)
-    - [BMS.py](#bmspy)
-    - [VESCCAN.py](#vesccanpy)
-    - [ESC.py](#escpy)
-    - [CyphalCAN3.py](#cyphalcan3py)
-    - [TCP.py](#tcppy)
-    - [server.py](#serverpy)
-    - [protocols_functions.py](#protocols_functionspy)
-    - [display1.py](#display1py)
-    - [display2.py](#display2py)
-    - [Joystick.py](#joystickpy)
-    - [LoRa.py](#lorapy)
-    - [IO.py](#iopy)
+This codebase is adapted from the [Feather Companion Computer (FCPC)](https://github.com/Pan-Robotics/Feather-Companion-Computer). The threading model and `Data.py` logging layer carry over; protocol handlers and the uplink swap out for Caribou hardware.
 
-## Introduction
+## Functions
 
-The Flight Companion Computer system designed for both Ground Control Station (GCS) and onboard flight use (FUI). It integrates multiple functionalities including data logging, telemetry server, and a user interface engine. The system is modular, allowing for easy expansion and maintenance, and is designed to provide a robust Data interface for flight operations.
+1. **Data ingestion** — MAVLink (FC), CAN (ESCs + BMS), GPIO/joystick
+2. **Onboard logging** — full-rate CSV to SSD for post-flight analysis
+3. **Hub uplink** — live TCP stream to Caribou Hub over 4G + WireGuard/Tailscale
 
-## Architecture Overview
+## Architecture (overview)
 
-The system is structured into multiple modules, each handling a specific aspect of the overall functionality. These modules include communication protocols, data handling, user interfaces, and specific hardware controls. The main control program loop resides in the `FCPC.py` file.
+```
+  [ArduPilot FC]    ──MAVLink/UDP──▶  MAVLink.py    ─┐
+  [6x Hobbywing ESC]──CAN0────────▶  Hobbywing.py  ─┤
+  [Tattu 18S BMS]   ──CAN1────────▶  TattuBMS.py   ─┼─▶ Data.py ─┬─▶ CSV log
+  [GPIO / joystick] ───────────────▶  IO / Joystick ─┘            │
+                                                                  └─▶ HubLink.py
+                                                                       │
+                                                                  4G + VPN
+                                                                       │
+                                                                       ▼
+                                                              Caribou Hub
+```
 
-## File Descriptions
+See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module map, network topology, and open questions.
 
-### FCPC.py
-**Main Function and Control Logic**  
-The central script that coordinates the activities of all other modules. Handles high-level decision making and ensures smooth operation of the entire system.
+## Hardware
 
-### Data.py
-**Data Handling Module**  
-Manages data storage and retrieval within the system. Provides functions for logging data, managing data formats, packaging data to be sent as telemetry.
+| Component | Choice |
+|---|---|
+| Compute | Raspberry Pi CM5 |
+| Carrier | FCPC Breakout PCB ([Hardware/PCBs/FCPC Breakout PCB/](Hardware/PCBs/FCPC%20Breakout%20PCB/)) |
+| CAN | 2-channel CAN HAT ([Hardware/PCBs/2-CH CAN HAT drawing/](Hardware/PCBs/2-CH%20CAN%20HAT%20drawing/)) |
+| WAN | 4G modem (AT-driven, ref [Docs/AT_Command_Reference.docx](Docs/AT_Command_Reference.docx)) |
+| Storage | onboard SSD |
+| Enclosure | 3D-printed ([Hardware/Enclosure/](Hardware/Enclosure/)) |
 
-### Veronte.py
-**Veronte Module**  
-Interfaces with the main Flight Controller, the Embention Veronte X1, over UART serial. packages flight sensor data, such as attitude and altitude etc.
+## Module Plan (V1)
 
-### BMS.py
-**Battery Management System (BMS) Module**  
-Packages data from each of the 6 Ennoid X-LITE-V4 BMSs on board the aircraft, including voltage, current, temperature, and state of charge, etc.
+| Module | Role | Status |
+|---|---|---|
+| `CSU.py` | Main loop, thread orchestration | planned (renames `FCPC.py`) |
+| `MAVLink.py` | ArduPilot ingestion over UDP via pymavlink | planned (replaces `Veronte.py`) |
+| `Hobbywing.py` | 6x XRotor X15 ESC telemetry on `can0` | planned (replaces `ESC.py`, `CyphalCAN3.py`) |
+| `TattuBMS.py` | 18S Tattu smart battery, pluggable adapter | planned, interface TBD (replaces `BMS.py`, `VESCCAN.py`) |
+| `HubLink.py` | Outbound TCP stream to Caribou Hub | planned (replaces `server.py` + `TCP.py`) |
+| `Data.py` | Central state + CSV logger | kept |
+| `IO.py`, `Joystick.py` | GPIO + joystick input | kept |
 
-### VESCCAN.py
-**VESC-CAN Module**  
-Interfaces with the VESC CAN bus protocol for interacting with data emminating from the Ennoid X-LITE-V4 BMSs, as implemented by Ennoid.
+Removed for Caribou: `LoRa.py`, `display1.py`, `display2.py`, `protocols_functions.py` (Caribou Hub owns display; 4G replaces LoRa).
 
-### ESC.py
-**Electronic Speed Controller (ESC) Module**  
-Packages data from each of the 6 Mad Motors ECSs on board the aircraft, including voltage, current, temperature, and state of charge, etc.
+Current `src/` still contains the FCPC modules — they will be replaced as V1 modules land.
 
-### CyphalCAN3.py
-**Cyphal-CAN Protocol Module**  
-Interfaces with the Cyphal-CAN CAN bus protocol for interacting with data emminating from the MAD Motors ECS, as implemented by MAD Motors.
+## Repo Layout
 
-### TCP.py
-**TCP/IP Communication Module**  
-Implements communication over TCP/IP, handling socket connections, data transmission, and reception over local network, send telemetry data to the displays.
+```
+Caribou System Unit/
+├── src/                 application code (CSU modules)
+├── Docs/                architecture, BOM, protocol references
+├── Hardware/            PCB designs, enclosure files
+├── Installation/        Raspberry Pi setup scripts and dependencies
+├── Logs/                sample logs, log parser
+├── Test/                hardware-in-the-loop test fixtures and Arduino dummies
+└── images/              UI assets
+```
 
-### server.py
-**Server Module**  
-Sets up a network connection to `display1.py` and `display2.py` to send telementry data to the display screens
+## References
 
-### protocols_functions.py
-**Protocols Utility Functions Module**  
-Contains utility functions used by `server.py`, `display1.py`, and `display2.py`. Provides common functionalities such as message parsing, checksum calculation, and other specific operations.
-
-### display1.py
-**Display Module 1**  
-Responsible for rendering the "System State Window", primarily displaying data from the Flight Controller.
-
-### display2.py
-**Display Module 2**  
-Responsible for rendering the "System Infromation Window", primarily displaying data from all the ESCs and BMSs.
-
-### Joystick.py
-**Joystick Input Module**  
-Handles input from but Logitec USB and Otto CAN joystick devices. Reads joystick movements and button presses, translating their commands to the control system.
-
-### LoRa.py
-**Long Range Radio Communication Module**  
-Implements communication over the LoRa protocol for long-range, low-power wireless communication. Handles message encoding, decoding, and transmission.
-
-### IO.py
-**Input-Output Module**  
-Manages I/O on the RPI GPIO pins.
-
----
-
-This README provides a comprehensive overview of the Caribou System Unit and its components. For detailed usage and additional information, refer to the documentation within each module and the main `FCPC.py` script, as well as the following reference documents:
-
-## FCPC Concept Document 
-
-[FCPC Concept]( https://docs.google.com/document/d/15r7cTYvV1hOLt8er7vyQtWU0twEOfAIIOQ0pdE-wRtA/edit?pli=1#heading=h.xr0raokzut1w )
-
-## Caribou System Unit Data Network & Ground Equipment Document
-
-[Data Network & Ground Equipment]( https://docs.google.com/document/d/11VlSYsE245VFLZsYB7TvqWuuJ1UnPRjPKnnLWUzqcEM/edit )
+- [Architecture proposal](Docs/Architecture.md) — full design doc for issue #12
+- [Caribou tracking issue](https://github.com/Arrow-air/project-caribou/issues/12)
+- [Feather Companion Computer (upstream)](https://github.com/Pan-Robotics/Feather-Companion-Computer)
+- [FCPC Concept Document](https://docs.google.com/document/d/15r7cTYvV1hOLt8er7vyQtWU0twEOfAIIOQ0pdE-wRtA/edit)
+- [Data Network & Ground Equipment](https://docs.google.com/document/d/11VlSYsE245VFLZsYB7TvqWuuJ1UnPRjPKnnLWUzqcEM/edit)
