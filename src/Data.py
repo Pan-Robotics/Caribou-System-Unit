@@ -30,7 +30,21 @@ class Data:
 
         self.VerontePacket  = {'altitude_AGL':0,'altitude_AGL_set':0,'altitude_ABS':40,'heading':0,'compass':0,'attitude_pitch':0,'attitude_roll':0,'vertical_speed_KTS':0,
                                'airspeed_KTS':0,'OAT':0,'latitude':'40d26a46q','longitude':'79d58a56q','flight_time':'50:39'}
-        
+
+        # MAVLink/ArduPilot telemetry populated by MAVLink.py (Caribou System Unit).
+        # Shape matches Caribou Hub telemetry spec §4 so HubLink can serve it directly.
+        self.MAVLinkPacket = {
+            'attitude': None,             # {roll_deg, pitch_deg, yaw_deg, timestamp}
+            'position': None,             # {latitude_deg, longitude_deg, absolute_altitude_m, relative_altitude_m, timestamp}
+            'gps': None,                  # {num_satellites, fix_type, timestamp}
+            'battery_fc': None,           # {voltage_v, remaining_percent, timestamp}
+            'in_air': None,               # bool
+            'flight_mode': None,          # str (e.g. "LOITER", "AUTO")
+            'airspeed_ms': None,          # float (ground speed magnitude, m/s)
+            'vertical_speed_ms': None,    # float (m/s, positive = climbing)
+            'heading_deg': None,          # float (0..360)
+        }
+
         self.BMSout = []
 
         self.BMSLog = {'0': {'unit_id': 0, 'NoOfCells': 0, 'auxVoltagesIndividual1': 46.6, 'auxVoltagesIndividual2': 221.36, 'auxVoltagesIndividual3': 396.12, 'packVoltage': 279183360, 'chargerVoltage': 1354956800, 

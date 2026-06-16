@@ -73,7 +73,7 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 | FCPC module | CSU module | Change |
 |---|---|---|
 | `FCPC.py` | `CSU.py` | Rename main orchestrator (cosmetic) |
-| `Veronte.py` | `MAVLink.py` | Embention UART → pymavlink UDP listener |
+| `Veronte.py` | `MAVLink.py` | Embention UART → MAVSDK UDP listener (`udpin://0.0.0.0:14540`), 8 parallel collectors writing to `Data.MAVLinkPacket` |
 | `ESC.py` + `CyphalCAN3.py` | `Hobbywing.py` | MAD Motors / Cyphal-CAN → Hobbywing CAN protocol |
 | `BMS.py` + `VESCCAN.py` | `TattuBMS.py` | Ennoid / VESC-CAN → Tattu 18S (pluggable interface) |
 | `server.py` + `TCP.py` | `HubLink.py` | Dual-display TCP server → inbound WebSocket server (`caribou.stream.v1`) that one or more Hubs dial into |
@@ -113,7 +113,7 @@ Inherited from FCPC: one Python process, one thread per data source + one for `H
 ## V1 Scope (issue #12 deliverable)
 
 In scope:
-- `MAVLink.py` — pymavlink UDP listener, attitude / GPS / battery / status streams
+- `MAVLink.py` — MAVSDK UDP listener; collects attitude, position, GPS, FC battery, velocity, heading, flight mode, in-air into `Data.MAVLinkPacket`
 - `Hobbywing.py` — `can0` reader, 6-motor telemetry parse (voltage, current, temperature, RPM)
 - `TattuBMS.py` — stub with a pluggable adapter, populated once Tattu comms are confirmed
 - `HubLink.py` — inbound WebSocket server (`caribou.stream.v1`) for telemetry + control lease + capability manifest

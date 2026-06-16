@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import secrets
 import time
 from datetime import datetime, timezone
@@ -36,32 +35,6 @@ def _now_iso() -> str:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
-
-
-_DMS_RE = re.compile(r"(-?\d+)[a-zA-Z](\d+)[a-zA-Z](\d+)")
-
-
-def _parse_dms(value):
-    """Parse FCPC-style DMS strings like '40d26a46q' to decimal degrees.
-
-    Accepts plain numbers and passes them through. Returns None for
-    anything it can't interpret, so callers can emit `null`.
-    """
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if not isinstance(value, str):
-        return None
-    m = _DMS_RE.match(value.strip())
-    if not m:
-        try:
-            return float(value)
-        except ValueError:
-            return None
-    d, mins, secs = (int(g) for g in m.groups())
-    val = abs(d) + mins / 60.0 + secs / 3600.0
-    return -val if d < 0 else val
 
 
 class HubLink:
@@ -325,32 +298,18 @@ class HubLink:
                 pass
 
     def _build_telemetry(self) -> dict:
-        """Snapshot Data.py state under tlock and shape it per spec §4."""
+        """Snapshot Data.py state under tlock and shape it per spec §4.
+
+        MAVLink-sourced blocks (attitude/position/gps/battery_fc/in_air/...)
+        are populated by MAVLink.py into Data.MAVLinkPacket in the exact
+        shape the Hub expects, so they pass through as-is. Per-arm data is
+        assembled from BMSLog/ESCLog (populated by Hobbywing.py and
+        TattuBMS.py as those land).
+        """
         with self.data.tlock:
-            v = dict(self.data.VerontePacket)
+            m = dict(self.data.MAVLinkPacket)
             bms = {k: dict(val) for k, val in self.data.BMSLog.items()}
             esc = {k: dict(val) for k, val in self.data.ESCLog.items()}
-
-        ts = _now_iso()
-
-        attitude = {
-            "roll_deg": float(v.get("attitude_roll") or 0.0),
-            "pitch_deg": float(v.get("attitude_pitch") or 0.0),
-            "yaw_deg": float(v.get("heading") or v.get("compass") or 0.0),
-            "timestamp": ts,
-        }
-
-        lat = _parse_dms(v.get("latitude"))
-        lon = _parse_dms(v.get("longitude"))
-        position = None
-        if lat is not None and lon is not None:
-            position = {
-                "latitude_deg": lat,
-                "longitude_deg": lon,
-                "absolute_altitude_m": float(v.get("altitude_ABS") or 0.0),
-                "relative_altitude_m": float(v.get("altitude_AGL") or 0.0),
-                "timestamp": ts,
-            }
 
         arms = []
         for i in range(6):
@@ -378,11 +337,15 @@ class HubLink:
             arms.append(arm)
 
         return {
-            "attitude": attitude,
-            "position": position,
-            "gps": None,           # MAVLink GPS_RAW_INT not wired yet
-            "battery_fc": None,    # MAVLink SYS_STATUS/BATTERY_STATUS not wired yet
-            "in_air": None,        # derive once FC arming/EXTENDED_SYS_STATE is wired
+            "attitude": m.get("attitude"),
+            "position": m.get("position"),
+            "gps": m.get("gps"),
+            "battery_fc": m.get("battery_fc"),
+            "in_air": m.get("in_air"),
+            "flight_mode": m.get("flight_mode"),
+            "airspeed_ms": m.get("airspeed_ms"),
+            "vertical_speed_ms": m.get("vertical_speed_ms"),
+            "heading_deg": m.get("heading_deg"),
             "arms": arms,
         }
 
@@ -400,10 +363,21 @@ if __name__ == "__main__":
     class _StubData:
         def __init__(self):
             self.tlock = threading.Lock()
-            self.VerontePacket = {
-                "attitude_roll": 0.0, "attitude_pitch": 0.0, "heading": 90.0,
-                "altitude_ABS": 40.0, "altitude_AGL": 10.0,
-                "latitude": "40d26a46q", "longitude": "-79d58a56q",
+            ts = _now_iso()
+            self.MAVLinkPacket = {
+                "attitude": {"roll_deg": 0.0, "pitch_deg": 0.0, "yaw_deg": 90.0,
+                              "timestamp": ts},
+                "position": {"latitude_deg": 40.4458, "longitude_deg": -79.9822,
+                              "absolute_altitude_m": 40.0, "relative_altitude_m": 10.0,
+                              "timestamp": ts},
+                "gps": {"num_satellites": 14, "fix_type": 3, "timestamp": ts},
+                "battery_fc": {"voltage_v": 48.2, "remaining_percent": 87.0,
+                                "timestamp": ts},
+                "in_air": False,
+                "flight_mode": "LOITER",
+                "airspeed_ms": 0.0,
+                "vertical_speed_ms": 0.0,
+                "heading_deg": 90.0,
             }
             self.BMSLog = {
                 str(i): {"packVoltage": 22.2, "packCurrent1": 12.0,

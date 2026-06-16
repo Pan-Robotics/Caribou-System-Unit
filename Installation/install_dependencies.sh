@@ -68,5 +68,8 @@ pip install cantools --break-system-packages
 # Install WebSockets library (HubLink server)
 pip install "websockets>=12" --break-system-packages
 
+# Install MAVSDK (MAVLink.py: ArduPilot telemetry ingestion)
+pip install mavsdk --break-system-packages
+
 # Install Arduino
 sudo apt-get install arduino
