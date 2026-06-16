@@ -1,6 +1,6 @@
 # Caribou System Unit
 
-Onboard telemetry handler for **Project Caribou**. Collects flight data from the flight controller, ESCs, and BMS; logs it locally; and streams it to the Caribou Hub over cellular.
+Onboard telemetry handler for **Project Caribou**. Collects flight data from the flight controller, ESCs, and BMS; logs it locally; and serves it to Caribou Hub operators via an inbound WebSocket server (HubLink) over Tailscale on 4G.
 
 > **Status:** Phase 1 — architecture locked, V1 implementation in progress.
 > Tracking issue: [Arrow-air/project-caribou#12](https://github.com/Arrow-air/project-caribou/issues/12)
@@ -12,7 +12,7 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 
 1. **Data ingestion** — MAVLink (FC), CAN (ESCs + BMS), GPIO/joystick
 2. **Onboard logging** — full-rate CSV to SSD for post-flight analysis
-3. **Hub uplink** — live TCP stream to Caribou Hub over 4G + WireGuard/Tailscale
+3. **Hub service** — WebSocket server (`caribou.stream.v1`) on `:8765` that Hubs dial into over Tailscale; single-writer control lease + capability manifest
 
 ## Architecture (overview)
 
@@ -22,11 +22,12 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
   [Tattu 18S BMS]   ──CAN1────────▶  TattuBMS.py   ─┼─▶ Data.py ─┬─▶ CSV log
   [GPIO / joystick] ───────────────▶  IO / Joystick ─┘            │
                                                                   └─▶ HubLink.py
-                                                                       │
-                                                                  4G + VPN
-                                                                       │
-                                                                       ▼
-                                                              Caribou Hub
+                                                                      (WS :8765)
+                                                                          ▲
+                                                                          │  Hubs dial IN
+                                                                  Tailscale + 4G
+                                                                          │
+                                                                  Hub #1 ... Hub #N
 ```
 
 See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module map, network topology, and open questions.
@@ -50,7 +51,7 @@ See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module ma
 | `MAVLink.py` | ArduPilot ingestion over UDP via pymavlink | planned (replaces `Veronte.py`) |
 | `Hobbywing.py` | 6x XRotor X15 ESC telemetry on `can0` | planned (replaces `ESC.py`, `CyphalCAN3.py`) |
 | `TattuBMS.py` | 18S Tattu smart battery, pluggable adapter | planned, interface TBD (replaces `BMS.py`, `VESCCAN.py`) |
-| `HubLink.py` | Outbound TCP stream to Caribou Hub | planned (replaces `server.py` + `TCP.py`) |
+| `HubLink.py` | Inbound WS server (`caribou.stream.v1`), lease + manifest | implemented (replaces `server.py` + `TCP.py`); see [Docs/HubLink_Implementation_Spec.md](Docs/HubLink_Implementation_Spec.md) |
 | `Data.py` | Central state + CSV logger | kept |
 | `IO.py`, `Joystick.py` | GPIO + joystick input | kept |
 
@@ -74,6 +75,7 @@ Caribou System Unit/
 ## References
 
 - [Architecture proposal](Docs/Architecture.md) — full design doc for issue #12
+- [HubLink Implementation Spec](Docs/HubLink_Implementation_Spec.md) — wire protocol, auth, lease, manifest
 - [Caribou tracking issue](https://github.com/Arrow-air/project-caribou/issues/12)
 - [Feather Companion Computer (upstream)](https://github.com/Pan-Robotics/Feather-Companion-Computer)
 - [FCPC Concept Document](https://docs.google.com/document/d/15r7cTYvV1hOLt8er7vyQtWU0twEOfAIIOQ0pdE-wRtA/edit)

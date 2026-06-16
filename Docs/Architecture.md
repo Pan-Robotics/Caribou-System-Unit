@@ -4,7 +4,7 @@ Repository: [Pan-Robotics/Caribou-System-Unit](https://github.com/Pan-Robotics/C
 
 Deliverable for [Arrow-air/project-caribou#12](https://github.com/Arrow-air/project-caribou/issues/12).
 
-The Caribou System Unit (CSU) is the onboard telemetry handler for Project Caribou. It collects flight data from the flight controller, ESCs, and BMS; logs it locally; and streams it to the Caribou Hub ([Arrow-air/project-caribou#10](https://github.com/Arrow-air/project-caribou/issues/10)) over cellular.
+The Caribou System Unit (CSU) is the onboard telemetry handler for Project Caribou. It collects flight data from the flight controller, ESCs, and BMS; logs it locally; and serves it to Caribou Hub operators ([Arrow-air/project-caribou#10](https://github.com/Arrow-air/project-caribou/issues/10)) over cellular: HubLink is a WebSocket **server** running on the drone, and Hubs dial in over Tailscale.
 
 This codebase is adapted from the [Feather Companion Computer (FCPC)](https://github.com/Pan-Robotics/Feather-Companion-Computer). The module structure, threading model, and `Data.py` logging layer carry over; the protocol handlers and uplink swap out for Caribou hardware.
 
@@ -50,22 +50,22 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
                                                │
                                   ┌────────────┴────────────┐
                                   ▼                         ▼
-                          [CSV log on SSD]            HubLink.py
-                          (full rate, always)         (TCP, live-only)
+                          [CSV log on SSD]      HubLink.py (WS SERVER :8765)
+                          (full rate, always)   caribou.stream.v1
+                                                          ▲
+                                                          │  (Hubs dial IN)
                                                           │
-                                                          ▼
-                                                   [4G modem (AT)]
+                                                  [ Tailscale tailnet ]
                                                           │
-                                                ──[ Cellular WAN ]──
+                                                ──[ Cellular WAN (4G) ]──
                                                           │
-                                                          ▼
-                                              [ WireGuard / Tailscale ]
-                                                          │
-                                                          ▼
-                                                ╔══════════════════╗
-                                                ║   Caribou Hub    ║
-                                                ║   (issue #10)    ║
-                                                ╚══════════════════╝
+                                                  ┌───────┴────────┐
+                                                  ▼                ▼
+                                            ╔══════════╗     ╔══════════╗
+                                            ║  Hub #1  ║ ... ║  Hub #N  ║
+                                            ║ (issue   ║     ║          ║
+                                            ║   #10)   ║     ║          ║
+                                            ╚══════════╝     ╚══════════╝
 ```
 
 ## Module Map — FCPC → CSU
@@ -76,7 +76,7 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 | `Veronte.py` | `MAVLink.py` | Embention UART → pymavlink UDP listener |
 | `ESC.py` + `CyphalCAN3.py` | `Hobbywing.py` | MAD Motors / Cyphal-CAN → Hobbywing CAN protocol |
 | `BMS.py` + `VESCCAN.py` | `TattuBMS.py` | Ennoid / VESC-CAN → Tattu 18S (pluggable interface) |
-| `server.py` + `TCP.py` | `HubLink.py` | Two-display server → single outbound stream to Hub |
+| `server.py` + `TCP.py` | `HubLink.py` | Dual-display TCP server → inbound WebSocket server (`caribou.stream.v1`) that one or more Hubs dial into |
 | `LoRa.py` | **removed** | 4G replaces long-range link |
 | `display1.py`, `display2.py`, `protocols_functions.py` | **removed** | Caribou Hub owns display |
 | `Data.py` | unchanged | Log basename already renamed to `CaribouSystemLog` |
@@ -84,16 +84,27 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 
 ## Network Architecture
 
-The System Unit reaches Caribou Hub through a single 4G uplink. Carrier NAT prevents inbound connections, so the CSU **dials out** through a VPN tunnel (WireGuard or Tailscale) terminated at a known endpoint. Caribou Hub connects to the same endpoint; both sides appear on a shared private network.
+The drone joins a Tailscale tailnet over 4G with a tagged ephemeral auth key, giving it a stable MagicDNS name. Caribou Hub operators dial into that name on port `8765` — HubLink is the WebSocket server, Hubs are the clients. This inverts the original "outbound TCP stream" design (see [HubLink_Implementation_Spec.md](HubLink_Implementation_Spec.md) §0): drone-as-service lets multiple operators monitor the same drone concurrently and sidesteps carrier NAT/CGNAT without per-drone public IPs.
 
 ```
-  [CSU on aircraft] ──4G──▶ [Carrier NAT] ──▶ [VPN endpoint] ◀── [Caribou Hub]
-                                                   │
-                                          private overlay net
-                                          (all parties addressable)
+  ╔═════════════════════════╗                        ╔══════════════╗
+  ║ Caribou System Unit     ║                        ║   Hub #1     ║
+  ║  HubLink :8765 (server) ║◀── WS (Tailscale) ─────║  (client)    ║
+  ║  caribou.stream.v1      ║                        ╚══════════════╝
+  ║                         ║                        ╔══════════════╗
+  ║                         ║◀── WS (Tailscale) ─────║   Hub #N     ║
+  ╚═════════════════════════╝                        ║  (client)    ║
+                                                     ╚══════════════╝
+  └─── 4G modem + tagged ephemeral Tailscale auth ───┘
 ```
 
-**Outage policy:** `HubLink.py` drops frames during cellular dropouts and resumes live on reconnect. No local buffer or replay. Full-rate CSV on SSD captures continuity for post-flight analysis. Rationale: keeps Hub-side view always-current; flight data is recoverable from the onboard log.
+**Security layers.** Tailscale ACLs decide which Hubs can reach `:8765`; a per-drone bearer API key (sent in the WebSocket subprotocol list as `bearer.<key>`) decides which drone's data a Hub may pull. Mismatched keys close the connection with WebSocket code 1008.
+
+**Control lease.** Monitoring is many-Hubs-read but control is single-writer: HubLink is the lease authority. At most one Hub holds the lease at a time, with a 30 s TTL refreshed by heartbeats. A holder that crashes or drops its connection automatically loses control on the next 1 Hz expiry sweep, so another operator can take over. See [HubLink_Implementation_Spec.md](HubLink_Implementation_Spec.md) §5.
+
+**Capability manifest.** Each drone advertises its payloads and the typed commands they accept (e.g. camera zoom, winch deploy). The Hub renders command forms from the manifest and rejects unknown actions client-side. See [HubLink_Implementation_Spec.md](HubLink_Implementation_Spec.md) §6.
+
+**Outage policy.** Cellular dropouts cause the Hub's WebSocket to break; the Hub reconnects and resumes pulling live telemetry. No local replay or backfill — full-rate CSV on the SSD covers post-flight analysis. Keeps Hub-side views always-current.
 
 ## Threading Model
 
@@ -105,7 +116,7 @@ In scope:
 - `MAVLink.py` — pymavlink UDP listener, attitude / GPS / battery / status streams
 - `Hobbywing.py` — `can0` reader, 6-motor telemetry parse (voltage, current, temperature, RPM)
 - `TattuBMS.py` — stub with a pluggable adapter, populated once Tattu comms are confirmed
-- `HubLink.py` — outbound TCP stream over VPN tunnel, live-only
+- `HubLink.py` — inbound WebSocket server (`caribou.stream.v1`) for telemetry + control lease + capability manifest
 - `Data.py` — central store + CSV logger (already migrated)
 - `CSU.py` — main loop, thread orchestration
 
@@ -119,12 +130,13 @@ Out of scope for V1:
 
 1. **Tattu 18S BMS comms interface** — CAN / UART / SMBus / proprietary. Drives whether `can1` is used or a different bus is needed. Blocks `TattuBMS.py` implementation past the stub.
 2. **CM5 carrier compatibility** — the existing FCPC Breakout PCB was designed against CM4 / Pi 4. Confirm CM5 footprint and pin compatibility before manufacturing the next revision.
-3. **VPN provider** — WireGuard (self-hosted) vs. Tailscale (managed). Tailscale is simpler operationally; WireGuard is fully under our control. Decision deferred until Caribou Hub side is in place.
+3. **Per-drone API keys** — the Hub provisions an `API_KEY` per drone during its "Drone Configuration → API Keys" flow. Need a deployment procedure (env file / systemd `EnvironmentFile`) so the key lands on the unit without being committed to the repo.
 4. **FC Ethernet hardware** — which ArduPilot board provides MAVLink-over-UDP natively (CubePilot Cube Orange+ on Ethernet carrier, Holybro Pixhawk 6X, etc.) vs. requiring a serial-to-Ethernet bridge.
 5. **`bcm2835-1.60` dependency** — audit whether any retained module still needs it, or whether `RPi.GPIO` / `gpiozero` covers everything. Cleanup candidate.
 
 ## References
 
+- [HubLink Implementation Spec](HubLink_Implementation_Spec.md) — wire protocol, auth, lease, manifest, acceptance criteria
 - [Caribou System Unit repo](https://github.com/Pan-Robotics/Caribou-System-Unit)
 - [Feather Companion Computer (upstream)](https://github.com/Pan-Robotics/Feather-Companion-Computer)
 - [FCPC Concept Doc](https://docs.google.com/document/d/15r7cTYvV1hOLt8er7vyQtWU0twEOfAIIOQ0pdE-wRtA/edit)
