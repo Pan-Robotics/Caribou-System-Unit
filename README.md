@@ -47,7 +47,7 @@ See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module ma
 
 | Module | Role | Status |
 |---|---|---|
-| `CSU.py` | Main loop, thread orchestration | planned (renames `FCPC.py`) |
+| `CSU.py` | Main entry point: spawns MAVLink + HubLink threads, handles SIGTERM/SIGINT | implemented (supersedes `FCPC.py`) |
 | `MAVLink.py` | ArduPilot ingestion over UDP via MAVSDK, populates `Data.MAVLinkPacket` | implemented (replaces `Veronte.py`) |
 | `Hobbywing.py` | 6x XRotor X15 ESC telemetry on `can0` | planned (replaces `ESC.py`, `CyphalCAN3.py`) |
 | `TattuBMS.py` | 18S Tattu smart battery, pluggable adapter | planned, interface TBD (replaces `BMS.py`, `VESCCAN.py`) |

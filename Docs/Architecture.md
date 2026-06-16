@@ -72,7 +72,7 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 
 | FCPC module | CSU module | Change |
 |---|---|---|
-| `FCPC.py` | `CSU.py` | Rename main orchestrator (cosmetic) |
+| `FCPC.py` | `CSU.py` | New thread orchestrator — spawns `MAVLink.run` and `HubLink.run` in daemon threads, parks main on SIGTERM/SIGINT; FCPC.py kept around until the legacy modules it imports are deleted |
 | `Veronte.py` | `MAVLink.py` | Embention UART → MAVSDK UDP listener (`udpin://0.0.0.0:14540`), 8 parallel collectors writing to `Data.MAVLinkPacket` |
 | `ESC.py` + `CyphalCAN3.py` | `Hobbywing.py` | MAD Motors / Cyphal-CAN → Hobbywing CAN protocol |
 | `BMS.py` + `VESCCAN.py` | `TattuBMS.py` | Ennoid / VESC-CAN → Tattu 18S (pluggable interface) |
@@ -118,7 +118,7 @@ In scope:
 - `TattuBMS.py` — stub with a pluggable adapter, populated once Tattu comms are confirmed
 - `HubLink.py` — inbound WebSocket server (`caribou.stream.v1`) for telemetry + control lease + capability manifest
 - `Data.py` — central store + CSV logger (already migrated)
-- `CSU.py` — main loop, thread orchestration
+- `CSU.py` — spawns MAVLink + HubLink in daemon threads, parks main thread on SIGTERM/SIGINT; reads `LOG_LEVEL`/`DRONE_ID` env
 
 Out of scope for V1:
 - Outage buffering / replay
