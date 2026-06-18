@@ -1,0 +1,34 @@
+[Unit]
+Description=Caribou System Unit - MAVLink ingest + HubLink (caribou.stream.v1)
+Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=alexdada555
+Group=alexdada555
+WorkingDirectory=/home/alexdada555/Caribou-System-Unit/src
+EnvironmentFile=/home/alexdada555/caribou-csu.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/alexdada555/Caribou-System-Unit/.venv/bin/python3 -u CSU.py
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=caribou-csu
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/alexdada555/Caribou-System-Unit
+
+[Install]
+WantedBy=multi-user.target
