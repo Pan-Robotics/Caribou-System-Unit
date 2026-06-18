@@ -59,6 +59,35 @@ Removed for Caribou: `LoRa.py`, `display1.py`, `display2.py`, `protocols_functio
 
 Current `src/` still contains the FCPC modules — they will be replaced as V1 modules land.
 
+## Deploying to a Fresh Drone
+
+A new CM5 is brought online with one script:
+
+```bash
+git clone https://github.com/Pan-Robotics/Caribou-System-Unit.git ~/Caribou-System-Unit
+cd ~/Caribou-System-Unit
+./Installation/bootstrap_drone.sh
+```
+
+The script provisions:
+1. System packages (`curl`, `python3-venv`, `ca-certificates`)
+2. Tailscale (`tailscale up` with the supplied auth key + drone tags)
+3. A Python venv at `.venv/` with `mavsdk` + `websockets`
+4. `~/caribou-csu.env` (`API_KEY` + `DRONE_ID`, mode `0600`)
+5. `/etc/systemd/system/csu.service` (enabled + started, `Restart=always`)
+6. A connection-summary card with the drone's MagicDNS name + tailnet IP + stream port to enter into the Hub UI
+
+Inputs can be interactive (defaults shown in prompts) or env-var supplied for unattended fleet provisioning:
+
+```bash
+DRONE_ID=caribou_007 \
+API_KEY=<per-drone-bearer> \
+TS_AUTHKEY=tskey-auth-... \
+./Installation/bootstrap_drone.sh
+```
+
+The Tailscale auth key should be **non-ephemeral, single-use, and tagged** (`tag:drone`, `tag:fleet-caribou` by default). Drones persist on the tailnet across reboots and outages.
+
 ## Repo Layout
 
 ```
