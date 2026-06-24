@@ -77,15 +77,38 @@ Handled by `install_logs_ota.sh`. Manually:
 pip install --break-system-packages mavsdk aiohttp python-socketio[asyncio_client] psutil requests
 ```
 
-## FC SD-card layout
+## FC SD-card payload
 
-Copy these from the System Unit repo to the FC's SD card under `APM/scripts/`:
+The two Lua scripts (`firmware_puller.lua` and `net_webserver_put.lua`) need to land in `APM/scripts/` on the FC's SD card. **You don't have to pull the SD card** — the Pi can push them over MAVFTP using [`install_fc_scripts.py`](install_fc_scripts.py):
+
+```bash
+python3 Installation/logs-ota/install_fc_scripts.py \
+    --fc-connection udpin://0.0.0.0:14550 \
+    --reboot
+```
+
+`install_logs_ota.sh` calls this as an optional final step (it'll prompt you "Push Lua scripts to FC now? [y/N]"). You can also invoke it standalone any time you need to update or re-push the scripts.
+
+What it does, in order:
+1. Opens an MAVSDK connection to the FC on the supplied `--fc-connection`.
+2. Ensures `/APM/scripts/` exists (idempotent — silently skips if already there).
+3. Lists what's already in `/APM/scripts/` so you see the before/after.
+4. MAVFTP-uploads each `.lua` file, reporting per-file progress.
+5. With `--reboot`, fires a MAVLink reboot so the scripts register their `FWPULL_*` / `WEB_*` parameter tables on the next boot.
+
+**Chicken-and-egg note for fresh FCs:** if you've never set `NET_*` parameters on the Pixhawk (so it has no MAVLink-over-Ethernet at all), MAVFTP can't reach it from the Pi. For that very first install, plug the FC into Mission Planner over USB and set `SCR_ENABLE=1` + `NET_ENABLE=1` + `NET_P1_*` (and ideally `NET_P2_*` too) over the USB MAVLink. Once Ethernet MAVLink is working, every subsequent script update is remote via `install_fc_scripts.py`.
+
+**Endpoint contention if `csu.service` is running:** `csu.service` owns `udpin://0.0.0.0:14540`. To push scripts at the same time, either:
+- Configure the Pixhawk's `NET_P2_*` to push a second MAVLink stream to `udpin://0.0.0.0:14550` (recommended; both services then coexist).
+- Or `sudo systemctl stop csu.service`, run `install_fc_scripts.py --fc-connection udpin://0.0.0.0:14540`, then `sudo systemctl start csu.service`.
+
+The end state on the FC:
 ```
 APM/
 ├── scripts/
 │   ├── firmware_puller.lua          (Tier 1 OTA pull, REQUIRED for OTA)
 │   ├── net_webserver_put.lua        (Tier 2 PUT support, optional)
-│   └── (any other Lua scripts you already have, e.g. relay_delayed_close.lua)
+│   └── (any other Lua scripts you already have)
 ├── ardupilot.abin                    (written by puller, consumed by bootloader)
 ```
 

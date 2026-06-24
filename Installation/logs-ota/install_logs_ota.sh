@@ -331,12 +331,55 @@ else
 fi
 echo -e "${GREEN}========================================${NC}"
 echo
-echo -e "${BOLD}FC SD card setup (one-time, separate step):${NC}"
-echo "  Copy these to APM/scripts/ on the FC's SD card:"
-echo "    ${INSTALL_DIR}/firmware_puller.lua"
-echo "    ${INSTALL_DIR}/net_webserver_put.lua  (optional, Tier 2 PUT support)"
-echo "  Set FC params: SCR_ENABLE=1, FWPULL_ENABLE=1, FWPULL_PI_IPx to this Pi's"
-echo "  IP, WEB_ENABLE=1. See OTA_Setup_Guide.md."
+
+# -- Optional: push Lua scripts to the FC over MAVFTP -----------------------
+if [ "$FC_CHOICE" != "4" ]; then
+    echo -e "${BOLD}${CYAN}--- FC SD-card payload (Lua scripts) ---${NC}"
+    echo
+    echo -e "  ${DIM}install_fc_scripts.py can push firmware_puller.lua and${NC}"
+    echo -e "  ${DIM}net_webserver_put.lua to the FC's /APM/scripts/ over MAVFTP —${NC}"
+    echo -e "  ${DIM}no SD-card removal needed.${NC}"
+    echo
+    echo -e "  ${YELLOW}Heads up:${NC} csu.service is using udpin://0.0.0.0:14540."
+    echo -e "  If you have NOT yet set up NET_P2_* on the Pixhawk to push a second"
+    echo -e "  MAVLink stream to ${FC_CONNECTION}, this will fail. In that case:"
+    echo -e "    - skip this now and set NET_P2_* via Mission Planner first, OR"
+    echo -e "    - temporarily \`sudo systemctl stop csu.service\` and re-invoke"
+    echo -e "      install_fc_scripts.py with --fc-connection udpin://0.0.0.0:14540"
+    echo
+    read -p "  Push Lua scripts to FC now? [y/N]: " PUSH_LUA
+    PUSH_LUA=${PUSH_LUA:-N}
+    if [[ "$PUSH_LUA" =~ ^[Yy] ]]; then
+        # Drop privs so MAVSDK runs as the service user (matches systemd unit env)
+        if command -v sudo >/dev/null 2>&1 && [ -n "${SUDO_USER:-}" ]; then
+            sudo -u "${SUDO_USER}" /usr/bin/python3 \
+                "${INSTALL_DIR}/install_fc_scripts.py" \
+                --fc-connection "${FC_CONNECTION}" \
+                --scripts-dir "${INSTALL_DIR}" || true
+        else
+            /usr/bin/python3 "${INSTALL_DIR}/install_fc_scripts.py" \
+                --fc-connection "${FC_CONNECTION}" \
+                --scripts-dir "${INSTALL_DIR}" || true
+        fi
+        echo
+    else
+        echo -e "${DIM}  Skipped. Run later:${NC}"
+        echo -e "${DIM}    python3 ${INSTALL_DIR}/install_fc_scripts.py \\${NC}"
+        echo -e "${DIM}        --fc-connection ${FC_CONNECTION}${NC}"
+        echo
+    fi
+fi
+
+echo -e "${BOLD}Remaining FC parameter setup (one-time, via Mission Planner / MAVProxy):${NC}"
+echo "  SCR_ENABLE=1                    (Lua scripting on; needs reboot)"
+echo "  FWPULL_ENABLE=1                 (firmware_puller active)"
+echo "  FWPULL_PI_IP0..3 = <this Pi's IP>"
+echo "  WEB_ENABLE=1                    (FC web server for log download)"
+echo "  WEB_PUT_ENABLE=1                (Tier 2 PUT fallback; optional)"
+echo "  NET_P2_TYPE=2 NET_P2_PORT=14550 NET_P2_IP*=<this Pi's IP>"
+echo "  (NET_P2 is what gives logs-ota.service its own MAVLink endpoint distinct"
+echo "   from csu.service's :14540.)"
+echo "  See OTA_Setup_Guide.md for the full table."
 echo
 echo -e "${BOLD}Useful commands:${NC}"
 echo "  sudo systemctl status ${SERVICE_NAME}"

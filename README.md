@@ -144,7 +144,7 @@ OTA flash path (Tier 1):
 
 1. **MAVLink endpoint contention.** CSU already listens on UDP `:14540`. Logs & OTA needs its own MAVSDK link for MAVFTP / arm-state / reboot, defaulting to UDP `:14550`. You'll need to configure the Pixhawk's `NET_P2_*` parameters to push a second MAVLink stream to the Pi on `:14550` (alternative: run `mavlink-router` on the Pi). See [Installation/logs-ota/OTA_Setup_Guide.md](Installation/logs-ota/OTA_Setup_Guide.md).
 
-2. **FC SD-card payload.** Copy `firmware_puller.lua` (and optionally `net_webserver_put.lua`) from `Installation/logs-ota/` to the FC's SD card under `APM/scripts/`, then set `SCR_ENABLE=1`, `FWPULL_ENABLE=1`, `FWPULL_PI_IPx` matching the Pi's IP, and reboot the FC.
+2. **FC SD-card payload (remote, no SD removal).** [`install_fc_scripts.py`](Installation/logs-ota/install_fc_scripts.py) pushes `firmware_puller.lua` and `net_webserver_put.lua` to the FC's `/APM/scripts/` over MAVFTP — `install_logs_ota.sh` prompts to run it as its final step. Then set `SCR_ENABLE=1`, `FWPULL_ENABLE=1`, `FWPULL_PI_IPx`, and reboot the FC via Mission Planner. The only situation that still requires touching the SD card / USB-attaching the FC is the *very first* install on a fresh Pixhawk where no `NET_*` parameters have been set yet.
 
 The installer inherits `DRONE_ID` + `API_KEY` from `~/caribou-csu.env` and writes service-specific values (`HUB_URL`, `FC_CONNECTION`, `FC_WEBSERVER_URL`) to `~/caribou-logs-ota.env`.
 
