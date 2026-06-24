@@ -1827,10 +1827,25 @@ class LogsOtaJobHandler:
 # --- System Diagnostics Collector ------------------------------------------
 
 class DiagnosticsCollector:
-    """Collects system health metrics from the Raspberry Pi."""
+    """Collects system health metrics from the Raspberry Pi.
 
-    # Services to monitor — Caribou-specific systemd unit names
-    MONITORED_SERVICES = [
+    The set of systemd units monitored here is resolved at construction
+    time. The Caribou Hub's Remote Logs tab populates its service-selector
+    dropdown from whatever keys arrive in `services` — so adding a unit
+    here makes it selectable in the UI on the next 10 s diagnostics tick.
+    Two env vars let operators customise per fleet:
+
+      MONITORED_SERVICES="csu.service,my-custom.service"
+          Override the full list (replaces the defaults).
+      MONITORED_SERVICES_EXTRA="winch.service,cargo.service"
+          Add to the defaults — useful for per-payload extras.
+    """
+
+    # Defaults reflect the units shipped by this repo: csu.service and
+    # caribou-can.service from bootstrap_drone.sh, logs-ota.service from
+    # install_logs_ota.sh, and the optional camera plane (camera-stream,
+    # go2rtc, tailscale-funnel). tailscaled is the overlay network itself.
+    DEFAULT_MONITORED_SERVICES = [
         "csu.service",
         "caribou-can.service",
         "logs-ota.service",
@@ -1840,8 +1855,27 @@ class DiagnosticsCollector:
         "tailscaled.service",
     ]
 
-    def __init__(self, fc_webserver_url: str = None):
+    def __init__(self, fc_webserver_url: str = None,
+                 monitored_services: list = None):
         self.fc_webserver_url = fc_webserver_url
+
+        env_full = os.environ.get("MONITORED_SERVICES", "").strip()
+        env_extra = os.environ.get("MONITORED_SERVICES_EXTRA", "").strip()
+        if monitored_services is not None:
+            self.monitored_services = list(monitored_services)
+        elif env_full:
+            self.monitored_services = [s.strip() for s in env_full.split(",") if s.strip()]
+        else:
+            extras = [s.strip() for s in env_extra.split(",") if s.strip()]
+            # Dedupe while preserving order.
+            seen = set()
+            self.monitored_services = []
+            for svc in list(self.DEFAULT_MONITORED_SERVICES) + extras:
+                if svc not in seen:
+                    seen.add(svc)
+                    self.monitored_services.append(svc)
+        logger.info(f"DiagnosticsCollector monitoring {len(self.monitored_services)} services: "
+                    f"{', '.join(s.replace('.service', '') for s in self.monitored_services)}")
 
     def collect(self) -> dict:
         diag: dict = {}
@@ -1914,7 +1948,7 @@ class DiagnosticsCollector:
                 pass
 
         services = {}
-        for svc in self.MONITORED_SERVICES:
+        for svc in self.monitored_services:
             try:
                 result = subprocess.run(
                     ["systemctl", "is-active", svc],
