@@ -1,0 +1,21 @@
+[Unit]
+Description=Caribou Camera Stream Service - health monitor + Hub registration
+After=go2rtc.service tailscale-funnel.service
+Requires=go2rtc.service
+
+[Service]
+Type=simple
+User=caribou
+EnvironmentFile=/home/caribou/caribou-hub/.env
+ExecStart=/usr/bin/python3 /home/caribou/caribou-hub/camera_stream_service.py \
+    --rtsp-url ${RTSP_URL} \
+    --hub-url ${HUB_URL} \
+    --drone-id ${DRONE_ID} \
+    --api-key ${API_KEY} \
+    --api-port ${GO2RTC_API_PORT} \
+    --webrtc-port ${GO2RTC_WEBRTC_PORT}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

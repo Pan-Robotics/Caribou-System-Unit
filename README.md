@@ -87,6 +87,27 @@ The Tailscale auth key should be **non-ephemeral, single-use, and tagged** (`tag
 
 **Pre-flight on the CM5 only:** the MCP2515 CAN HAT overlays need a one-time write to `/boot/firmware/config.txt` + reboot. Run `./Installation/enable_uart_spi.sh` (idempotent; reboots at the end) before the first `bootstrap_drone.sh`.
 
+## Optional: Camera Streaming
+
+If the drone has an RTSP camera and you want browser-based WebRTC playback via the Hub, install the camera stack from [Installation/camera/](Installation/camera/) **after** `bootstrap_drone.sh` has joined the tailnet. This adds three systemd units that run parallel to and independent of `csu.service` — telemetry continues unaffected if the camera is removed or broken.
+
+```bash
+sudo ./Installation/camera/install_camera_services.sh
+```
+
+What gets installed:
+- **`go2rtc.service`** — [go2rtc](https://github.com/AlexxIT/go2rtc) binary transcodes RTSP → WebRTC; serves the WHEP signaling API on `:1984`
+- **`tailscale-funnel.service`** — exposes `:1984` on a public HTTPS URL via Tailscale Funnel (signaling only; WebRTC media flows peer-to-peer over UDP)
+- **`camera-stream.service`** — Python wrapper that health-checks go2rtc and POSTs the WHEP URL to the Caribou Hub's `/api/rest/camera/stream-register` every 5 minutes
+
+The installer inherits `DRONE_ID`/`API_KEY` from `~/caribou-csu.env` (set by `bootstrap_drone.sh`) and writes camera-specific values (`RTSP_URL`, `HUB_URL`, `GO2RTC_*_PORT`) to `~/caribou-camera.env`. The two env files keep the two service planes independently configurable.
+
+Data plane separation:
+```
+  Telemetry plane:   FC + CAN  -> CSU  -> HubLink (drone-as-server, Hub dials in over Tailscale)
+  Camera plane:      RTSP cam  -> go2rtc -> Tailscale Funnel (public HTTPS) -> Hub WHEP proxy
+```
+
 ## Repo Layout
 
 ```
@@ -95,6 +116,7 @@ Caribou System Unit/
 ├── Docs/         architecture, HubLink wire spec, modem AT-command reference
 ├── Hardware/     PCB references (2-CH CAN HAT) and 3D-printed enclosure files
 ├── Installation/ bootstrap + per-step shell scripts + systemd unit files + env template
+│   └── camera/  optional RTSP-camera streaming stack (go2rtc + Tailscale Funnel + Hub registration)
 ├── Logs/         post-flight CSV log parsing tools
 └── Test/         HIL fixtures (Arduino BMS/ESC dummies, CAN HAT demo)
 ```

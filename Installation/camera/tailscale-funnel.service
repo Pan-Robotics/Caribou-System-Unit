@@ -1,0 +1,13 @@
+[Unit]
+Description=Tailscale Funnel - expose go2rtc API publicly
+After=tailscaled.service go2rtc.service
+Wants=tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/tailscale funnel --bg --https=443 http://localhost:1984
+ExecStop=/usr/bin/tailscale funnel --https=443 off
+
+[Install]
+WantedBy=multi-user.target
