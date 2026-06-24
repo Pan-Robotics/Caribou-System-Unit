@@ -45,6 +45,12 @@ class Data:
             'heading_deg': None,          # float (0..360)
         }
 
+        # Per-arm BMS telemetry populated by TattuBMS.py (UAVCAN BatteryInfo over CAN).
+        # Keyed by arm_id 1..6. HubLink reads this to fill arms[].bms in spec §4.
+        # Entries are added/updated as BatteryInfo frames arrive — absence of a key
+        # means that BMS hasn't been heard from yet (HubLink emits no bms block).
+        self.BMSArms = {}  # {arm_id: {voltage_v, current_a, temperature_c, soc_pct, soh_pct, timestamp}}
+
         self.BMSout = []
 
         self.BMSLog = {'0': {'unit_id': 0, 'NoOfCells': 0, 'auxVoltagesIndividual1': 46.6, 'auxVoltagesIndividual2': 221.36, 'auxVoltagesIndividual3': 396.12, 'packVoltage': 279183360, 'chargerVoltage': 1354956800, 

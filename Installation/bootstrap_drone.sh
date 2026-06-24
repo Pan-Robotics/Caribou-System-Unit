@@ -163,8 +163,8 @@ else
     info "venv already present at $VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
-"$VENV_DIR/bin/pip" install -q "websockets>=12" mavsdk
-ok "mavsdk + websockets installed"
+"$VENV_DIR/bin/pip" install -q "websockets>=12" mavsdk dronecan
+ok "mavsdk + websockets + dronecan installed"
 echo
 
 # ── Step 4: Runtime env file ─────────────────────────────────────────────────

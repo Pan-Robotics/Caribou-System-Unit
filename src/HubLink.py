@@ -302,29 +302,33 @@ class HubLink:
 
         MAVLink-sourced blocks (attitude/position/gps/battery_fc/in_air/...)
         are populated by MAVLink.py into Data.MAVLinkPacket in the exact
-        shape the Hub expects, so they pass through as-is. Per-arm data is
-        assembled from BMSLog/ESCLog (populated by Hobbywing.py and
-        TattuBMS.py as those land).
+        shape the Hub expects, so they pass through as-is. Per-arm BMS
+        blocks come from Data.BMSArms (populated by TattuBMS.py); ESC
+        blocks still use the legacy FCPC `ESCLog` shape until Hobbywing.py
+        lands.
         """
         with self.data.tlock:
             m = dict(self.data.MAVLinkPacket)
-            bms = {k: dict(val) for k, val in self.data.BMSLog.items()}
+            bms_arms = {k: dict(v) for k, v in self.data.BMSArms.items()}
             esc = {k: dict(val) for k, val in self.data.ESCLog.items()}
 
         arms = []
         for i in range(6):
-            key = str(i)
-            arm = {"arm_id": i + 1}
-            if key in bms:
-                b = bms[key]
+            arm_id = i + 1
+            arm = {"arm_id": arm_id}
+
+            bms_entry = bms_arms.get(arm_id)
+            if bms_entry:
                 arm["bms"] = {
-                    "voltage_v": float(b.get("packVoltage") or 0.0),
-                    "current_a": float(b.get("packCurrent1") or 0.0),
-                    "temperature_c": float(b.get("tBattHi") or 0.0),
-                    "soc_pct": float(b.get("SOC") or 0.0),
+                    "voltage_v": bms_entry.get("voltage_v"),
+                    "current_a": bms_entry.get("current_a"),
+                    "temperature_c": bms_entry.get("temperature_c"),
+                    "soc_pct": bms_entry.get("soc_pct"),
                 }
-            if key in esc:
-                e = esc[key]
+
+            esc_key = str(i)
+            if esc_key in esc:
+                e = esc[esc_key]
                 e60 = e.get("info_upload_6160") or {}
                 e61 = e.get("info_upload_6161") or {}
                 temps = e61.get("temperatures") or {}
@@ -379,9 +383,10 @@ if __name__ == "__main__":
                 "vertical_speed_ms": 0.0,
                 "heading_deg": 90.0,
             }
-            self.BMSLog = {
-                str(i): {"packVoltage": 22.2, "packCurrent1": 12.0,
-                         "tBattHi": 30.0, "SOC": 87.0}
+            self.BMSArms = {
+                i + 1: {"voltage_v": 22.2, "current_a": 12.0,
+                         "temperature_c": 30.0, "soc_pct": 87.0,
+                         "timestamp": ts}
                 for i in range(6)
             }
             self.ESCLog = {

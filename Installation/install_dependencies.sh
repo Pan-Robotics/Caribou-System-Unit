@@ -71,5 +71,8 @@ pip install "websockets>=12" --break-system-packages
 # Install MAVSDK (MAVLink.py: ArduPilot telemetry ingestion)
 pip install mavsdk --break-system-packages
 
+# Install DroneCAN (TattuBMS.py: per-arm UAVCAN BatteryInfo over CAN)
+pip install dronecan --break-system-packages
+
 # Install Arduino
 sudo apt-get install arduino

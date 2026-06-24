@@ -52,7 +52,7 @@ if [ ! -d "$VENV_DIR" ]; then
     echo "  created $VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
-"$VENV_DIR/bin/pip" install "websockets>=12" mavsdk
+"$VENV_DIR/bin/pip" install "websockets>=12" mavsdk dronecan
 echo -e "${GREEN}  ✓ venv ready${NC}"
 echo
 

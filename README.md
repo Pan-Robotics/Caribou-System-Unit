@@ -50,7 +50,7 @@ See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module ma
 | `CSU.py` | Main entry point: spawns MAVLink + HubLink threads, handles SIGTERM/SIGINT | implemented (supersedes `FCPC.py`) |
 | `MAVLink.py` | ArduPilot ingestion over UDP via MAVSDK, populates `Data.MAVLinkPacket` | implemented (replaces `Veronte.py`) |
 | `Hobbywing.py` | 6x XRotor X15 ESC telemetry on `can0` | planned (replaces `ESC.py`, `CyphalCAN3.py`) |
-| `TattuBMS.py` | 18S Tattu smart battery, pluggable adapter | planned, interface TBD (replaces `BMS.py`, `VESCCAN.py`) |
+| `TattuBMS.py` | Per-arm BMS via DroneCAN `BatteryInfo` on `can1`, routed by source node ID into `Data.BMSArms` | implemented (replaces `BMS.py`, `VESCCAN.py`); pending HIL validation against real Tattu packs |
 | `HubLink.py` | Inbound WS server (`caribou.stream.v1`), lease + manifest | implemented (replaces `server.py` + `TCP.py`); see [Docs/HubLink_Implementation_Spec.md](Docs/HubLink_Implementation_Spec.md) |
 | `Data.py` | Central state + CSV logger | kept |
 | `IO.py`, `Joystick.py` | GPIO + joystick input | kept |

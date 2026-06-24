@@ -2,17 +2,19 @@
 """CSU.py - Caribou System Unit main orchestrator.
 
 Spawns and supervises the worker threads that make up the System Unit:
-  - MAVLink.py: ArduPilot telemetry ingestion via MAVSDK (UDP from FC)
-  - HubLink.py: WebSocket server (`caribou.stream.v1`) on :8765 that Hubs
-                dial into over Tailscale
+  - MAVLink.py:  ArduPilot telemetry ingestion via MAVSDK (UDP from FC)
+  - TattuBMS.py: Per-arm BMS ingestion via DroneCAN (UAVCAN BatteryInfo
+                  on `can1`)
+  - HubLink.py:  WebSocket server (`caribou.stream.v1`) on :8765 that Hubs
+                  dial into over Tailscale
 
 Shared state lives in Data.py; Data.tlock protects reads/writes between
-threads. Configuration is taken from environment variables (see
-MAVLink/HubLink for the full list); the process is intended to run under
-systemd. SIGTERM/SIGINT trigger a clean shutdown.
+threads. Configuration is taken from environment variables (see each
+worker for the full list); the process is intended to run under systemd.
+SIGTERM/SIGINT trigger a clean shutdown.
 
-Hobbywing.py (ESC) and TattuBMS.py (BMS) will slot in here as additional
-worker threads once those modules land.
+Hobbywing.py (ESC over `can0`) will slot in here as a fourth worker
+thread once that module lands.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import threading
 import Data
 import HubLink
 import MAVLink
+import TattuBMS
 
 log = logging.getLogger("CSU")
 
@@ -44,6 +47,7 @@ def main() -> int:
     data = Data.Data(None, "FUI")
 
     mavlink = MAVLink.MAVLink(data)
+    tattu_bms = TattuBMS.TattuBMS(data)
     hublink = HubLink.HubLink(data)
 
     stop = threading.Event()
@@ -51,12 +55,14 @@ def main() -> int:
     def _shutdown(signum, _frame):
         log.info("Signal %s received; shutting down", signum)
         stop.set()
+        tattu_bms.stop()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
     workers = [
         threading.Thread(target=mavlink.run, name="MAVLink", daemon=True),
+        threading.Thread(target=tattu_bms.run, name="TattuBMS", daemon=True),
         threading.Thread(target=hublink.run, name="HubLink", daemon=True),
     ]
     for t in workers:
