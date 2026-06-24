@@ -41,10 +41,7 @@ def main() -> int:
     drone_id = os.environ.get("DRONE_ID", "caribou_001")
     log.info("Caribou System Unit starting (drone_id=%s)", drone_id)
 
-    # Data.__init__ inherits its (TCP, modeselect) signature from FCPC.
-    # The TCP positional is unused on CSU (HubLink replaces it); "FUI"
-    # selects the airborne code paths in legacy modules that still read it.
-    data = Data.Data(None, "FUI")
+    data = Data.Data()
 
     mavlink = MAVLink.MAVLink(data)
     hobbywing = Hobbywing.Hobbywing(data)

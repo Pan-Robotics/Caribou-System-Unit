@@ -1,63 +1,59 @@
 # Caribou System Unit
 
-Onboard telemetry handler for **Project Caribou**. Collects flight data from the flight controller, ESCs, and BMS; logs it locally; and serves it to Caribou Hub operators via an inbound WebSocket server (HubLink) over Tailscale on 4G.
+Onboard telemetry handler for **Project Caribou**. Collects flight data from the flight controller, ESCs, and BMS; serves it to Caribou Hub operators via an inbound WebSocket server (HubLink) over Tailscale on 4G.
 
-> **Status:** Phase 1 — architecture locked, V1 implementation in progress.
+> **Status:** Phase 1 — implementation complete, awaiting full HIL validation against the airframe-mounted hardware.
 > Tracking issue: [Arrow-air/project-caribou#12](https://github.com/Arrow-air/project-caribou/issues/12)
 > Full architecture: [Docs/Architecture.md](Docs/Architecture.md)
+> HubLink wire spec: [Docs/HubLink_Implementation_Spec.md](Docs/HubLink_Implementation_Spec.md)
 
-This codebase is adapted from the [Feather Companion Computer (FCPC)](https://github.com/Pan-Robotics/Feather-Companion-Computer). The threading model and `Data.py` logging layer carry over; protocol handlers and the uplink swap out for Caribou hardware.
+Originated as a fork of the [Feather Companion Computer (FCPC)](https://github.com/Pan-Robotics/Feather-Companion-Computer); the protocol handlers, uplink, and data plane have been swapped out for Caribou hardware. The FCPC heritage modules have been removed — see git history if you need to consult the original code.
 
 ## Functions
 
-1. **Data ingestion** — MAVLink (FC), CAN (ESCs + BMS), GPIO/joystick
-2. **Onboard logging** — full-rate CSV to SSD for post-flight analysis
-3. **Hub service** — WebSocket server (`caribou.stream.v1`) on `:8765` that Hubs dial into over Tailscale; single-writer control lease + capability manifest
+1. **Data ingestion** — MAVLink (FC over UDP/Ethernet), DroneCAN (`can0` ESCs, `can1` BMS)
+2. **Hub service** — WebSocket server (`caribou.stream.v1`) on `:8765` that Hubs dial into over Tailscale; single-writer control lease + capability manifest
+3. **Run-as-a-service** — runs under systemd (`csu.service`) with `Restart=always`; CAN interfaces brought up at boot by `caribou-can.service`
 
 ## Architecture (overview)
 
 ```
-  [ArduPilot FC]    ──MAVLink/UDP──▶  MAVLink.py    ─┐
-  [6x Hobbywing ESC]──CAN0────────▶  Hobbywing.py  ─┤
-  [Tattu 18S BMS]   ──CAN1────────▶  TattuBMS.py   ─┼─▶ Data.py ─┬─▶ CSV log
-  [GPIO / joystick] ───────────────▶  IO / Joystick ─┘            │
-                                                                  └─▶ HubLink.py
-                                                                      (WS :8765)
-                                                                          ▲
-                                                                          │  Hubs dial IN
-                                                                  Tailscale + 4G
-                                                                          │
-                                                                  Hub #1 ... Hub #N
+  [ArduPilot FC]      ──MAVLink/UDP──▶  MAVLink.py    ─┐
+  [6x Hobbywing X15]  ──CAN0────────▶  Hobbywing.py  ─┤
+  [6x BMS (Tattu)]    ──CAN1────────▶  TattuBMS.py   ─┼─▶  Data.py
+                                                      ┘
+                                                          │
+                                                          ▼
+                                                     HubLink.py (WS :8765)
+                                                          ▲
+                                                          │  Hubs dial IN
+                                                  Tailscale + 4G
+                                                          │
+                                                  Hub #1  …  Hub #N
 ```
 
-See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, module map, network topology, and open questions.
+See [Docs/Architecture.md](Docs/Architecture.md) for the full diagram, network topology, and open questions.
 
 ## Hardware
 
 | Component | Choice |
 |---|---|
 | Compute | Raspberry Pi CM5 |
-| Carrier | FCPC Breakout PCB ([Hardware/PCBs/FCPC Breakout PCB/](Hardware/PCBs/FCPC%20Breakout%20PCB/)) |
-| CAN | 2-channel CAN HAT ([Hardware/PCBs/2-CH CAN HAT drawing/](Hardware/PCBs/2-CH%20CAN%20HAT%20drawing/)) |
-| WAN | 4G modem (AT-driven, ref [Docs/AT_Command_Reference.docx](Docs/AT_Command_Reference.docx)) |
-| Storage | onboard SSD |
+| Carrier | Waveshare CM5-DUAL-ETH-4G-5G-BASE (dual GbE, M.2 4G slot) |
+| CAN | Waveshare 2-CH CAN HAT (MCP2515 ×2; [Hardware/PCBs/2-CH CAN HAT drawing/](Hardware/PCBs/2-CH%20CAN%20HAT%20drawing/)) |
+| WAN | SIM7600X-H M.2 (AT-driven, ref [Docs/AT_Command_Reference.docx](Docs/AT_Command_Reference.docx)) |
 | Enclosure | 3D-printed ([Hardware/Enclosure/](Hardware/Enclosure/)) |
 
-## Module Plan (V1)
+## Modules
 
-| Module | Role | Status |
-|---|---|---|
-| `CSU.py` | Main entry point: spawns MAVLink + HubLink threads, handles SIGTERM/SIGINT | implemented (supersedes `FCPC.py`) |
-| `MAVLink.py` | ArduPilot ingestion over UDP via MAVSDK, populates `Data.MAVLinkPacket` | implemented (replaces `Veronte.py`) |
-| `Hobbywing.py` | 6x XRotor X15 ESC telemetry via DroneCAN `esc.Status` on `can0`, routed by source node ID into `Data.ESCArms` | implemented (replaces `ESC.py`, `CyphalCAN3.py`); X15 must be configured to DroneCAN mode (it supports HWCAN+DroneCAN dual) |
-| `TattuBMS.py` | Per-arm BMS via DroneCAN `BatteryInfo` on `can1`, routed by source node ID into `Data.BMSArms` | implemented (replaces `BMS.py`, `VESCCAN.py`); pending HIL validation against real Tattu packs |
-| `HubLink.py` | Inbound WS server (`caribou.stream.v1`), lease + manifest | implemented (replaces `server.py` + `TCP.py`); see [Docs/HubLink_Implementation_Spec.md](Docs/HubLink_Implementation_Spec.md) |
-| `Data.py` | Central state + CSV logger | kept |
-| `IO.py`, `Joystick.py` | GPIO + joystick input | kept |
-
-Removed for Caribou: `LoRa.py`, `display1.py`, `display2.py`, `protocols_functions.py` (Caribou Hub owns display; 4G replaces LoRa).
-
-Current `src/` still contains the FCPC modules — they will be replaced as V1 modules land.
+| Module | Role |
+|---|---|
+| [src/CSU.py](src/CSU.py) | Main entry point — spawns four daemon threads, handles SIGTERM/SIGINT |
+| [src/MAVLink.py](src/MAVLink.py) | ArduPilot ingestion over UDP via MAVSDK; populates `Data.MAVLinkPacket` |
+| [src/Hobbywing.py](src/Hobbywing.py) | 6× XRotor X15 ESC telemetry via DroneCAN `esc.Status` on `can0`; populates `Data.ESCArms`. X15 must be in DroneCAN mode (it supports HWCAN+DroneCAN dual) via the Hobbywing DataLink tool. |
+| [src/TattuBMS.py](src/TattuBMS.py) | Per-arm BMS via DroneCAN `BatteryInfo` on `can1`; populates `Data.BMSArms` |
+| [src/HubLink.py](src/HubLink.py) | Inbound WebSocket server (`caribou.stream.v1`), single-writer control lease + capability manifest |
+| [src/Data.py](src/Data.py) | Shared in-process state; `tlock` + the three structured dicts above |
 
 ## Deploying to a Fresh Drone
 
@@ -70,12 +66,13 @@ cd ~/Caribou-System-Unit
 ```
 
 The script provisions:
-1. System packages (`curl`, `python3-venv`, `ca-certificates`)
+1. System packages
 2. Tailscale (`tailscale up` with the supplied auth key + drone tags)
-3. A Python venv at `.venv/` with `mavsdk` + `websockets`
+3. A Python venv at `.venv/` with `mavsdk`, `websockets`, `dronecan`
 4. `~/caribou-csu.env` (`API_KEY` + `DRONE_ID`, mode `0600`)
-5. `/etc/systemd/system/csu.service` (enabled + started, `Restart=always`)
-6. A connection-summary card with the drone's MagicDNS name + tailnet IP + stream port to enter into the Hub UI
+5. `/etc/systemd/system/caribou-can.service` (boots `can0`/`can1` once the kernel devices appear)
+6. `/etc/systemd/system/csu.service` (enabled + started, `Restart=always`, ordered `After=caribou-can.service`)
+7. A connection-summary card with the drone's MagicDNS name + tailnet IP + stream port to type into the Hub UI
 
 Inputs can be interactive (defaults shown in prompts) or env-var supplied for unattended fleet provisioning:
 
@@ -88,17 +85,18 @@ TS_AUTHKEY=tskey-auth-... \
 
 The Tailscale auth key should be **non-ephemeral, single-use, and tagged** (`tag:drone`, `tag:fleet-caribou` by default). Drones persist on the tailnet across reboots and outages.
 
+**Pre-flight on the CM5 only:** the MCP2515 CAN HAT overlays need a one-time write to `/boot/firmware/config.txt` + reboot. Run `./Installation/enable_uart_spi.sh` (idempotent; reboots at the end) before the first `bootstrap_drone.sh`.
+
 ## Repo Layout
 
 ```
 Caribou System Unit/
-├── src/                 application code (CSU modules)
-├── Docs/                architecture, BOM, protocol references
-├── Hardware/            PCB designs, enclosure files
-├── Installation/        Raspberry Pi setup scripts and dependencies
-├── Logs/                sample logs, log parser
-├── Test/                hardware-in-the-loop test fixtures and Arduino dummies
-└── images/              UI assets
+├── src/          application code (CSU, MAVLink, Hobbywing, TattuBMS, HubLink, Data)
+├── Docs/         architecture, HubLink wire spec, modem AT-command reference
+├── Hardware/     PCB references (2-CH CAN HAT) and 3D-printed enclosure files
+├── Installation/ bootstrap + per-step shell scripts + systemd unit files + env template
+├── Logs/         post-flight CSV log parsing tools
+└── Test/         HIL fixtures (Arduino BMS/ESC dummies, CAN HAT demo)
 ```
 
 ## References
@@ -106,6 +104,4 @@ Caribou System Unit/
 - [Architecture proposal](Docs/Architecture.md) — full design doc for issue #12
 - [HubLink Implementation Spec](Docs/HubLink_Implementation_Spec.md) — wire protocol, auth, lease, manifest
 - [Caribou tracking issue](https://github.com/Arrow-air/project-caribou/issues/12)
-- [Feather Companion Computer (upstream)](https://github.com/Pan-Robotics/Feather-Companion-Computer)
-- [FCPC Concept Document](https://docs.google.com/document/d/15r7cTYvV1hOLt8er7vyQtWU0twEOfAIIOQ0pdE-wRtA/edit)
-- [Data Network & Ground Equipment](https://docs.google.com/document/d/11VlSYsE245VFLZsYB7TvqWuuJ1UnPRjPKnnLWUzqcEM/edit)
+- [Feather Companion Computer (heritage upstream)](https://github.com/Pan-Robotics/Feather-Companion-Computer)
