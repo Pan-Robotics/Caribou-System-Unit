@@ -334,6 +334,11 @@ class HubLink:
                     "voltage_v": esc_entry.get("voltage_v"),
                     "current_a": esc_entry.get("current_a"),
                     "temperature_c": esc_entry.get("temperature_c"),
+                    # motor_temp_c is the winding temp from the ESC's separate
+                    # thermistor channel — distinct from temperature_c (the ESC
+                    # board temp). Caribou Hub's TelemetryApp.toArmData() reads
+                    # this exact key; without it the structural view shows 0.
+                    "motor_temp_c": esc_entry.get("motor_temperature_c"),
                 }
             arms.append(arm)
 
