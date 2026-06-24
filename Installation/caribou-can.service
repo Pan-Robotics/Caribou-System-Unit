@@ -1,0 +1,30 @@
+[Unit]
+Description=Caribou System Unit - CAN0/CAN1 bring-up
+Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
+# Wait for the MCP2515 char devices to exist (they appear once the kernel has
+# probed the SPI chips). Without these the ExecStart `ip link` would race.
+After=sys-subsystem-net-devices-can0.device sys-subsystem-net-devices-can1.device
+Wants=sys-subsystem-net-devices-can0.device sys-subsystem-net-devices-can1.device
+Before=csu.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+
+# Idempotent: bring down first (ignore "not up") so restart/re-up works cleanly.
+ExecStartPre=-/sbin/ip link set can0 down
+ExecStartPre=-/sbin/ip link set can1 down
+
+# can0 -> Hobbywing XRotor X15 ESCs (500 kbit common; revisit when bitrate is confirmed)
+ExecStart=/sbin/ip link set can0 up type can bitrate 500000
+ExecStart=/sbin/ip link set can0 txqueuelen 65536
+
+# can1 -> DroneCAN BMS (1 Mbit/s per the DroneCAN standard)
+ExecStart=/sbin/ip link set can1 up type can bitrate 1000000
+ExecStart=/sbin/ip link set can1 txqueuelen 65536
+
+ExecStop=/sbin/ip link set can0 down
+ExecStop=/sbin/ip link set can1 down
+
+[Install]
+WantedBy=multi-user.target

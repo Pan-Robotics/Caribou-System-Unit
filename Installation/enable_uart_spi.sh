@@ -29,9 +29,11 @@ sudo sed -i '/^dtparam=spi=on$/d' "$CONFIG"
 sudo sed -i '/^dtoverlay=mcp2515-can[01],/d' "$CONFIG"
 sudo sed -i '/^dtoverlay=spi-bcm2835-overlay$/d' "$CONFIG"
 
-# Waveshare 2-CH CAN HAT+ (MCP2515, NOT the FD variant)
+# Waveshare 2-CH CAN HAT (MCP2515, NON-isolated variant).
+# Verified working against this HAT model on CM5 + Waveshare DUAL-ETH-4G-5G-BASE.
+# If you swap to the "+" / isolated HAT, change can1 interrupt to GPIO 24.
 ensure_line "^dtoverlay=mcp2515-can0," "dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25"
-ensure_line "^dtoverlay=mcp2515-can1," "dtoverlay=mcp2515-can1,oscillator=12000000,interrupt=24"
+ensure_line "^dtoverlay=mcp2515-can1," "dtoverlay=mcp2515-can1,oscillator=12000000,interrupt=23"
 
 echo "config.txt updated. Rebooting in 2s..."
 sleep 2

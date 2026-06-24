@@ -1,8 +1,8 @@
 [Unit]
 Description=Caribou System Unit - MAVLink ingest + HubLink (caribou.stream.v1)
 Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
-After=network-online.target tailscaled.service
-Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service caribou-can.service
+Wants=network-online.target tailscaled.service caribou-can.service
 
 [Service]
 Type=simple

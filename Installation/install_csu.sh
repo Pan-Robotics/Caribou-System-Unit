@@ -74,14 +74,42 @@ ENV
 fi
 echo
 
-# ── Step 3: systemd unit ─────────────────────────────────────────────────────
-echo -e "${GREEN}[3/4] systemd unit${NC}"
+# ── Step 3: systemd units (caribou-can + csu) ────────────────────────────────
+echo -e "${GREEN}[3/4] systemd units${NC}"
+
+CAN_UNIT_PATH=/etc/systemd/system/caribou-can.service
+sudo tee "$CAN_UNIT_PATH" >/dev/null <<'CAN_UNIT'
+[Unit]
+Description=Caribou System Unit - CAN0/CAN1 bring-up
+Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
+After=sys-subsystem-net-devices-can0.device sys-subsystem-net-devices-can1.device
+Wants=sys-subsystem-net-devices-can0.device sys-subsystem-net-devices-can1.device
+Before=csu.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStartPre=-/sbin/ip link set can0 down
+ExecStartPre=-/sbin/ip link set can1 down
+ExecStart=/sbin/ip link set can0 up type can bitrate 500000
+ExecStart=/sbin/ip link set can0 txqueuelen 65536
+ExecStart=/sbin/ip link set can1 up type can bitrate 1000000
+ExecStart=/sbin/ip link set can1 txqueuelen 65536
+ExecStop=/sbin/ip link set can0 down
+ExecStop=/sbin/ip link set can1 down
+
+[Install]
+WantedBy=multi-user.target
+CAN_UNIT
+sudo chmod 0644 "$CAN_UNIT_PATH"
+echo -e "${GREEN}  ✓ wrote $CAN_UNIT_PATH${NC}"
+
 sudo tee "$UNIT_PATH" >/dev/null <<UNIT
 [Unit]
 Description=Caribou System Unit - MAVLink ingest + HubLink (caribou.stream.v1)
 Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
-After=network-online.target tailscaled.service
-Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service caribou-can.service
+Wants=network-online.target tailscaled.service caribou-can.service
 
 [Service]
 Type=simple
@@ -118,7 +146,8 @@ echo
 # ── Step 4: Enable + start ───────────────────────────────────────────────────
 echo -e "${GREEN}[4/4] Enable + start${NC}"
 sudo systemctl daemon-reload
-sudo systemctl enable csu.service
+sudo systemctl enable caribou-can.service csu.service
+sudo systemctl restart caribou-can.service || true
 sudo systemctl restart csu.service
 sleep 3
 sudo systemctl status csu.service --no-pager -n 8 | head -14
