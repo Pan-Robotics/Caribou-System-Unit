@@ -119,6 +119,35 @@ Data-plane separation:
 
 Same Tailscale identity, distinct ports + services. A broken camera doesn't affect telemetry; removing CSU doesn't affect the camera.
 
+## Optional: Logs & OTA Service
+
+For remote post-flight `.BIN` log download and over-the-air firmware updates from the Hub UI, install the Logs & OTA stack from [Installation/logs-ota/](Installation/logs-ota/). Like the camera plane, this is **independent of and parallel to `csu.service`** — telemetry continues if Logs & OTA is removed or broken.
+
+```bash
+sudo ./Installation/logs-ota/install_logs_ota.sh
+```
+
+What gets installed:
+- **`logs-ota.service`** — Python service that polls the Hub job queue for `scan_fc_logs`, `download_fc_log`, and `flash_firmware` jobs. Reports system diagnostics (CPU, mem, disk, temp, services) every 10 s. Streams `journalctl` output over Socket.IO when the browser asks for live log tails.
+- **`firmware_puller.lua`** + **`net_webserver_put.lua`** — Lua scripts that go on the **FC's SD card** under `APM/scripts/`. The puller polls the Pi on `:8070` for available firmware; the web server (optional Tier 2 fallback) supports HTTP PUT to `/APM/`.
+
+OTA flash path (Tier 1):
+```
+  Hub UI ─▶ Pi downloads .abin ─▶ Pi serves on :8070 ─▶ FC (firmware_puller.lua) pulls
+                                                       ─▶ FC writes /APM/ardupilot.abin
+                                                       ─▶ Pi MAVLink-reboots the FC
+                                                       ─▶ FC bootloader flashes new firmware
+                                                       ─▶ Pi polls FC webserver to confirm reboot
+```
+
+**Two things to know before install:**
+
+1. **MAVLink endpoint contention.** CSU already listens on UDP `:14540`. Logs & OTA needs its own MAVSDK link for MAVFTP / arm-state / reboot, defaulting to UDP `:14550`. You'll need to configure the Pixhawk's `NET_P2_*` parameters to push a second MAVLink stream to the Pi on `:14550` (alternative: run `mavlink-router` on the Pi). See [Installation/logs-ota/OTA_Setup_Guide.md](Installation/logs-ota/OTA_Setup_Guide.md).
+
+2. **FC SD-card payload.** Copy `firmware_puller.lua` (and optionally `net_webserver_put.lua`) from `Installation/logs-ota/` to the FC's SD card under `APM/scripts/`, then set `SCR_ENABLE=1`, `FWPULL_ENABLE=1`, `FWPULL_PI_IPx` matching the Pi's IP, and reboot the FC.
+
+The installer inherits `DRONE_ID` + `API_KEY` from `~/caribou-csu.env` and writes service-specific values (`HUB_URL`, `FC_CONNECTION`, `FC_WEBSERVER_URL`) to `~/caribou-logs-ota.env`.
+
 ## Hub-side Compatibility
 
 The Hub's Telemetry app (`Caribou Hub/Hub Interface/client/src/components/apps/TelemetryApp.tsx`) consumes our wire format via a small normalisation function `toArmData()` that maps HubLink's nested per-arm shape `{arm_id, bms:{}, esc:{}}` → the flat shape `HexStructuralView` renders. All fields HubLink emits today are wired up Hub-side, with two minor notes:
@@ -136,7 +165,8 @@ Caribou System Unit/
 ├── Docs/                 Architecture, HubLink wire spec, modem AT-command reference
 ├── Hardware/             2-CH CAN HAT reference + 3D-printed enclosure files
 ├── Installation/         bootstrap + per-step scripts + systemd units + env template
-│   └── camera/           optional RTSP camera streaming stack (go2rtc + Tailscale Funnel)
+│   ├── camera/           optional RTSP camera streaming stack (go2rtc + Tailscale Funnel)
+│   └── logs-ota/         optional Logs + OTA stack (FC HTTP pull, diagnostics, journalctl streaming)
 ├── Logs/                 post-flight CSV log parsing tools
 └── Test/                 HIL fixtures (Arduino BMS/ESC dummies, CAN HAT demo)
 ```

@@ -1,0 +1,52 @@
+# =============================================================================
+# Caribou Hub - Logs & OTA Service (systemd unit file)
+# =============================================================================
+# This is a TEMPLATE. install_logs_ota.sh generates the actual unit file at
+# /etc/systemd/system/logs-ota.service with your real values; you should not
+# need to edit this file directly.
+#
+# To install:   sudo ./install_logs_ota.sh
+# To update:    sudo ./install_logs_ota.sh  (re-run; upgrades in place)
+# To remove:    sudo ./install_logs_ota.sh --uninstall
+# =============================================================================
+
+[Unit]
+Description=Caribou Hub - Logs & OTA Service
+Documentation=https://github.com/Pan-Robotics/Caribou-System-Unit
+After=network-online.target csu.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=SERVICE_USER_PLACEHOLDER
+Group=SERVICE_USER_PLACEHOLDER
+WorkingDirectory=/home/SERVICE_USER_PLACEHOLDER
+EnvironmentFile=/home/SERVICE_USER_PLACEHOLDER/caribou-csu.env
+EnvironmentFile=-/home/SERVICE_USER_PLACEHOLDER/caribou-logs-ota.env
+ExecStart=/usr/bin/python3 INSTALL_DIR_PLACEHOLDER/logs_ota_service.py \
+    --hub-url ${HUB_URL} \
+    --drone-id ${DRONE_ID} \
+    --api-key ${API_KEY} \
+    --fc-connection ${FC_CONNECTION} \
+    --fc-webserver-url ${FC_WEBSERVER_URL} \
+    --log-store-dir /var/lib/caribou/fc_logs \
+    --poll-interval 5 \
+    --diagnostics-interval 10
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=logs-ota
+
+Environment=PYTHONUNBUFFERED=1
+
+# Security hardening
+ProtectSystem=strict
+ReadWritePaths=/tmp /home/SERVICE_USER_PLACEHOLDER /var/lib/caribou/fc_logs
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
