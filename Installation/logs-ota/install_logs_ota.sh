@@ -226,9 +226,25 @@ echo
 
 # -- Step 1: Python deps ----------------------------------------------------
 echo -e "${GREEN}[1/5] Installing Python dependencies${NC}"
-pip3 install --break-system-packages -q \
-    mavsdk requests psutil "python-socketio[asyncio_client]" aiohttp >/dev/null
-echo "  done"
+
+# Prefer the CSU venv if it exists (avoids re-downloading mavsdk ~18 MB to
+# system Python and keeps one Python environment per drone). Falls back to
+# system Python with --break-system-packages if no venv is found.
+CSU_VENV="$(eval echo ~$SERVICE_USER)/Caribou-System-Unit/.venv"
+if [ -x "$CSU_VENV/bin/python3" ]; then
+    PYTHON="$CSU_VENV/bin/python3"
+    PIP_CMD="$CSU_VENV/bin/pip"
+    echo "  using CSU venv: $CSU_VENV"
+    sudo -u "$SERVICE_USER" "$PIP_CMD" install -q \
+        mavsdk requests psutil "python-socketio[asyncio_client]" aiohttp
+else
+    PYTHON="/usr/bin/python3"
+    PIP_CMD="pip3"
+    echo "  ${YELLOW}CSU venv not found at $CSU_VENV - using system Python${NC}"
+    $PIP_CMD install --break-system-packages -q \
+        mavsdk requests psutil "python-socketio[asyncio_client]" aiohttp
+fi
+echo "  done (python: $PYTHON)"
 echo
 
 # -- Step 2: Stage logs_ota_service.py (already in place if running from repo) ---
@@ -278,7 +294,7 @@ Group=${SERVICE_USER}
 WorkingDirectory=/home/${SERVICE_USER}
 EnvironmentFile=${CSU_ENV_FILE}
 EnvironmentFile=-${LOGS_OTA_ENV}
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/logs_ota_service.py \\
+ExecStart=${PYTHON} ${INSTALL_DIR}/logs_ota_service.py \\
     --hub-url \${HUB_URL} \\
     --drone-id \${DRONE_ID} \\
     --api-key \${API_KEY} \\
@@ -352,19 +368,19 @@ if [ "$FC_CHOICE" != "4" ]; then
     if [[ "$PUSH_LUA" =~ ^[Yy] ]]; then
         # Drop privs so MAVSDK runs as the service user (matches systemd unit env)
         if command -v sudo >/dev/null 2>&1 && [ -n "${SUDO_USER:-}" ]; then
-            sudo -u "${SUDO_USER}" /usr/bin/python3 \
+            sudo -u "${SUDO_USER}" "${PYTHON}" \
                 "${INSTALL_DIR}/install_fc_scripts.py" \
                 --fc-connection "${FC_CONNECTION}" \
                 --scripts-dir "${INSTALL_DIR}" || true
         else
-            /usr/bin/python3 "${INSTALL_DIR}/install_fc_scripts.py" \
+            "${PYTHON}" "${INSTALL_DIR}/install_fc_scripts.py" \
                 --fc-connection "${FC_CONNECTION}" \
                 --scripts-dir "${INSTALL_DIR}" || true
         fi
         echo
     else
         echo -e "${DIM}  Skipped. Run later:${NC}"
-        echo -e "${DIM}    python3 ${INSTALL_DIR}/install_fc_scripts.py \\${NC}"
+        echo -e "${DIM}    ${PYTHON} ${INSTALL_DIR}/install_fc_scripts.py \\${NC}"
         echo -e "${DIM}        --fc-connection ${FC_CONNECTION}${NC}"
         echo
     fi

@@ -72,10 +72,12 @@ sudo ufw allow from 192.168.144.10 to any port 8070
 ```
 
 ### Python dependencies
-Handled by `install_logs_ota.sh`. Manually:
+Handled by `install_logs_ota.sh`. The installer prefers the existing CSU venv at `~/Caribou-System-Unit/.venv` (already has `mavsdk` from `bootstrap_drone.sh`) and adds the four small ones that aren't there yet. Manual equivalent:
 ```bash
-pip install --break-system-packages mavsdk aiohttp python-socketio[asyncio_client] psutil requests
+~/Caribou-System-Unit/.venv/bin/pip install aiohttp psutil requests "python-socketio[asyncio_client]"
+# mavsdk is already in the venv from bootstrap_drone.sh
 ```
+If no CSU venv exists (e.g. this is a non-CSU host), the installer falls back to `pip3 install --break-system-packages` against system Python.
 
 ## FC SD-card payload
 
