@@ -304,13 +304,14 @@ class HubLink:
         are populated by MAVLink.py into Data.MAVLinkPacket in the exact
         shape the Hub expects, so they pass through as-is. Per-arm BMS
         blocks come from Data.BMSArms (populated by TattuBMS.py); ESC
-        blocks still use the legacy FCPC `ESCLog` shape until Hobbywing.py
-        lands.
+        blocks come from Data.ESCArms (populated by Hobbywing.py). Absence
+        of a key on either side means we haven't heard from that source
+        yet — HubLink simply omits the block.
         """
         with self.data.tlock:
             m = dict(self.data.MAVLinkPacket)
             bms_arms = {k: dict(v) for k, v in self.data.BMSArms.items()}
-            esc = {k: dict(val) for k, val in self.data.ESCLog.items()}
+            esc_arms = {k: dict(v) for k, v in self.data.ESCArms.items()}
 
         arms = []
         for i in range(6):
@@ -326,17 +327,13 @@ class HubLink:
                     "soc_pct": bms_entry.get("soc_pct"),
                 }
 
-            esc_key = str(i)
-            if esc_key in esc:
-                e = esc[esc_key]
-                e60 = e.get("info_upload_6160") or {}
-                e61 = e.get("info_upload_6161") or {}
-                temps = e61.get("temperatures") or {}
+            esc_entry = esc_arms.get(arm_id)
+            if esc_entry:
                 arm["esc"] = {
-                    "rpm": float(e60.get("electrical_speed") or 0.0),
-                    "voltage_v": float(e61.get("bus_voltage") or 0.0),
-                    "current_a": float(e60.get("bus_current") or 0.0),
-                    "temperature_c": float(temps.get("Motor") or temps.get("MOS") or 0.0),
+                    "rpm": esc_entry.get("rpm"),
+                    "voltage_v": esc_entry.get("voltage_v"),
+                    "current_a": esc_entry.get("current_a"),
+                    "temperature_c": esc_entry.get("temperature_c"),
                 }
             arms.append(arm)
 
@@ -389,12 +386,10 @@ if __name__ == "__main__":
                          "timestamp": ts}
                 for i in range(6)
             }
-            self.ESCLog = {
-                str(i): {
-                    "info_upload_6160": {"electrical_speed": 4200, "bus_current": 11.0},
-                    "info_upload_6161": {"bus_voltage": 22.2,
-                                         "temperatures": {"Motor": 45, "MOS": 38}},
-                }
+            self.ESCArms = {
+                i + 1: {"rpm": 4200, "voltage_v": 22.2, "current_a": 11.0,
+                         "temperature_c": 45.0, "motor_temperature_c": 60.0,
+                         "timestamp": ts}
                 for i in range(6)
             }
 

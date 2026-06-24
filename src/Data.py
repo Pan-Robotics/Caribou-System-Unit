@@ -51,6 +51,12 @@ class Data:
         # means that BMS hasn't been heard from yet (HubLink emits no bms block).
         self.BMSArms = {}  # {arm_id: {voltage_v, current_a, temperature_c, soc_pct, soh_pct, timestamp}}
 
+        # Per-arm ESC telemetry populated by Hobbywing.py (DroneCAN uavcan.equipment.esc.Status
+        # over can0). Keyed by arm_id 1..6. HubLink reads this to fill arms[].esc in spec §4.
+        # The Hobbywing XRotor X15 supports both HWCAN and DroneCAN protocols — the module
+        # assumes DroneCAN mode is selected via the Hobbywing DataLink tool.
+        self.ESCArms = {}  # {arm_id: {rpm, voltage_v, current_a, temperature_c, motor_temperature_c, timestamp}}
+
         self.BMSout = []
 
         self.BMSLog = {'0': {'unit_id': 0, 'NoOfCells': 0, 'auxVoltagesIndividual1': 46.6, 'auxVoltagesIndividual2': 221.36, 'auxVoltagesIndividual3': 396.12, 'packVoltage': 279183360, 'chargerVoltage': 1354956800, 

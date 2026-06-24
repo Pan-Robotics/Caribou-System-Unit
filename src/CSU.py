@@ -2,19 +2,18 @@
 """CSU.py - Caribou System Unit main orchestrator.
 
 Spawns and supervises the worker threads that make up the System Unit:
-  - MAVLink.py:  ArduPilot telemetry ingestion via MAVSDK (UDP from FC)
-  - TattuBMS.py: Per-arm BMS ingestion via DroneCAN (UAVCAN BatteryInfo
-                  on `can1`)
-  - HubLink.py:  WebSocket server (`caribou.stream.v1`) on :8765 that Hubs
-                  dial into over Tailscale
+  - MAVLink.py:   ArduPilot telemetry ingestion via MAVSDK (UDP from FC)
+  - Hobbywing.py: Per-arm ESC ingestion via DroneCAN (UAVCAN esc.Status
+                   on `can0`)
+  - TattuBMS.py:  Per-arm BMS ingestion via DroneCAN (UAVCAN BatteryInfo
+                   on `can1`)
+  - HubLink.py:   WebSocket server (`caribou.stream.v1`) on :8765 that Hubs
+                   dial into over Tailscale
 
 Shared state lives in Data.py; Data.tlock protects reads/writes between
 threads. Configuration is taken from environment variables (see each
 worker for the full list); the process is intended to run under systemd.
 SIGTERM/SIGINT trigger a clean shutdown.
-
-Hobbywing.py (ESC over `can0`) will slot in here as a fourth worker
-thread once that module lands.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ import signal
 import threading
 
 import Data
+import Hobbywing
 import HubLink
 import MAVLink
 import TattuBMS
@@ -47,6 +47,7 @@ def main() -> int:
     data = Data.Data(None, "FUI")
 
     mavlink = MAVLink.MAVLink(data)
+    hobbywing = Hobbywing.Hobbywing(data)
     tattu_bms = TattuBMS.TattuBMS(data)
     hublink = HubLink.HubLink(data)
 
@@ -55,6 +56,7 @@ def main() -> int:
     def _shutdown(signum, _frame):
         log.info("Signal %s received; shutting down", signum)
         stop.set()
+        hobbywing.stop()
         tattu_bms.stop()
 
     signal.signal(signal.SIGTERM, _shutdown)
@@ -62,6 +64,7 @@ def main() -> int:
 
     workers = [
         threading.Thread(target=mavlink.run, name="MAVLink", daemon=True),
+        threading.Thread(target=hobbywing.run, name="Hobbywing", daemon=True),
         threading.Thread(target=tattu_bms.run, name="TattuBMS", daemon=True),
         threading.Thread(target=hublink.run, name="HubLink", daemon=True),
     ]

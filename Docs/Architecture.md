@@ -74,7 +74,7 @@ This codebase is adapted from the [Feather Companion Computer (FCPC)](https://gi
 |---|---|---|
 | `FCPC.py` | `CSU.py` | New thread orchestrator — spawns `MAVLink.run` and `HubLink.run` in daemon threads, parks main on SIGTERM/SIGINT; FCPC.py kept around until the legacy modules it imports are deleted |
 | `Veronte.py` | `MAVLink.py` | Embention UART → MAVSDK UDP listener (`udpin://0.0.0.0:14540`), 8 parallel collectors writing to `Data.MAVLinkPacket` |
-| `ESC.py` + `CyphalCAN3.py` | `Hobbywing.py` | MAD Motors / Cyphal-CAN → Hobbywing CAN protocol |
+| `ESC.py` + `CyphalCAN3.py` | `Hobbywing.py` | MAD Motors / Cyphal-CAN → DroneCAN `esc.Status` listener on `can0`; 6 UAVCAN node IDs (default 20–25) routed to arms 1–6; populates `Data.ESCArms`. XRotor X15 supports HWCAN+DroneCAN dual protocols — must be set to DroneCAN via Hobbywing DataLink. |
 | `BMS.py` + `VESCCAN.py` | `TattuBMS.py` | Ennoid / VESC-CAN → DroneCAN `BatteryInfo` listener on `can1`; 6 UAVCAN node IDs (default 10–15) routed to arms 1–6; populates `Data.BMSArms` |
 | `server.py` + `TCP.py` | `HubLink.py` | Dual-display TCP server → inbound WebSocket server (`caribou.stream.v1`) that one or more Hubs dial into |
 | `LoRa.py` | **removed** | 4G replaces long-range link |
@@ -114,7 +114,7 @@ Inherited from FCPC: one Python process, one thread per data source + one for `H
 
 In scope:
 - `MAVLink.py` — MAVSDK UDP listener; collects attitude, position, GPS, FC battery, velocity, heading, flight mode, in-air into `Data.MAVLinkPacket`
-- `Hobbywing.py` — `can0` reader, 6-motor telemetry parse (voltage, current, temperature, RPM)
+- `Hobbywing.py` — DroneCAN `esc.Status` listener on `can0`, source-node-id-to-arm mapping (default 20–25), populates `Data.ESCArms`
 - `TattuBMS.py` — DroneCAN `BatteryInfo` listener on `can1`, source-node-id to arm mapping, populates `Data.BMSArms`
 - `HubLink.py` — inbound WebSocket server (`caribou.stream.v1`) for telemetry + control lease + capability manifest
 - `Data.py` — central store + CSV logger (already migrated)
